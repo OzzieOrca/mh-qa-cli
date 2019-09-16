@@ -1,7 +1,7 @@
 {
   "name": "mh-qa-cli",
   "description": "A command to get MissionHub QA running",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "author": "Spencer Oberstadt @soberstadt",
   "bin": {
     "mh-qa": "./bin/run"
@@ -35,7 +35,10 @@
   "license": "MIT",
   "main": "lib/index.js",
   "oclif": {
-    "bin": "mh-qa"
+    "bin": "mh-qa",
+    "macos": {
+      "identifier": "com.missionhub.qa.cli"
+    }
   },
   "repository": "soberstadt/mh-qa-cli",
   "scripts": {

@@ -17,7 +17,9 @@ class MhQaCli extends Command {
 
   async run() {
     const {args} = this.parse(MhQaCli)
-    const branch = args.branch || 'master'
+    const branch = args.branch || await ask_for_branch()
+
+    if(branch == 'quit' || branch == 'exit' || branch == '') return console.log('fine.......');
 
     if(branch == 'setup') return await setup();
 
@@ -26,6 +28,16 @@ class MhQaCli extends Command {
     await pods()
     launch()
   }
+}
+
+async function ask_for_branch() {
+  console.log('Which branch would you like to QA?')
+  console.log('You can say:')
+  console.log('setup - This will make sure you have all that you need to run MissionHub React Native')
+  console.log('master - This is the version of the app that should be on the app store')
+  console.log('exit - To get out of here')
+  console.log('or any branch given to you by a programmer')
+  return await cli.prompt('Which branch?')
 }
 
 async function setup() {
