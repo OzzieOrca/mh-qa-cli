@@ -44,6 +44,7 @@ const dependencies: {
   },
   {
     title: '📱  Creating Android Emulator',
+    check: '[ ! -f ~/Library/Android/sdk/tools/bin/avdmanager ]',
     install:
       '~/Library/Android/sdk/tools/bin/avdmanager create avd --name missionhub-qa-cli --package "system-images;android-29;google_apis;x86" --device pixel_xl --force',
   },
