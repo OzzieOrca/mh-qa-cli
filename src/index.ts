@@ -112,22 +112,29 @@ async function askForBranch() {
 async function fetchBranches() {
   cli.action.start('👀  Fetching branches');
 
-  await exec('cd ~/code/missionhub-react-native && git fetch origin --prune');
   const { stdout } = await exec(
-    'cd ~/code/missionhub-react-native && git branch -r',
+    "cd ~/code/missionhub-react-native && git ls-remote -q --heads | awk '{print $2}'",
   );
 
-  const branches = stdout
+  const sortPriority = (branch: string) =>
+    branch === 'develop'
+      ? 3
+      : branch === 'master'
+      ? 2
+      : branch.match(/^MHP-/i)
+      ? 1
+      : 0;
+
+  const branches /*Object.values(*/ = stdout
     .split('\n')
     .filter(Boolean)
-    .map((branch: string) => branch.trim().replace('origin/', ''))
-    .sort((a: string, b: string) =>
-      a === 'develop' ||
-      (a === 'master' && b != 'develop') ||
-      a.startsWith('MHP-')
-        ? -1
-        : 0,
-    );
+    .map(branch => branch.trim().replace('refs/heads/', ''))
+    .sort((a, b) => {
+      const sortDiff = sortPriority(b) - sortPriority(a);
+      return sortDiff === 0
+        ? a.localeCompare(b, undefined, { sensitivity: 'base' })
+        : sortDiff;
+    });
 
   cli.action.stop();
 
