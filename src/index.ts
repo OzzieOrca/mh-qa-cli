@@ -125,16 +125,15 @@ async function fetchBranches() {
       ? 1
       : 0;
 
-  const branches /*Object.values(*/ = stdout
+  const branches = stdout
     .split('\n')
     .filter(Boolean)
     .map(branch => branch.trim().replace('refs/heads/', ''))
-    .sort((a, b) => {
-      const sortDiff = sortPriority(b) - sortPriority(a);
-      return sortDiff === 0
-        ? a.localeCompare(b, undefined, { sensitivity: 'base' })
-        : sortDiff;
-    });
+    .sort(
+      (a, b) =>
+        sortPriority(b) - sortPriority(a) ||
+        a.localeCompare(b, undefined, { sensitivity: 'base' }),
+    );
 
   cli.action.stop();
 
