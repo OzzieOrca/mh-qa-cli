@@ -1,185 +1,229 @@
-import {Command, flags} from '@oclif/command'
+import { Command, flags } from '@oclif/command';
+import { cli } from 'cli-ux';
+import * as inquirer from 'inquirer';
+import 'colors';
+import { exec as execCallback } from 'child_process';
+import * as util from 'util';
+import * as fs from 'fs';
 
-const util = require('util');
-const exec = util.promisify(require('child_process').exec);
-const {cli} = require('cli-ux')
+import { setup } from './setup';
+import { oneskySetup } from './onesky';
+
+const exec = util.promisify(execCallback);
+const readFile = util.promisify(fs.readFile);
+const writeFile = util.promisify(fs.writeFile);
+
+type Mode = 'ios' | 'android' | 'setup' | 'oneskySetup' | 'exit';
+type ApiEnv = 'staging' | 'production';
 
 class MhQaCli extends Command {
-  static description = 'describe the command here'
+  static description = 'Run the MissionHub React Native app for QA';
 
   static flags = {
-    // add --version flag to show CLI version
-    version: flags.version({char: 'v'}),
-    help: flags.help({char: 'h'}),
-  }
+    version: flags.version({ char: 'v' }),
+    help: flags.help({ char: 'h' }),
+  };
 
-  static args = [{name: 'branch'}]
+  static args = [
+    {
+      name: 'mode',
+      description:
+        'Action to perform. One of: iOS, android, setup, oneskySetup, exit',
+    },
+    { name: 'branch', description: 'Git branch to build' },
+    {
+      name: 'apiEnv',
+      description:
+        'API environment to test against. One of: staging, production',
+    },
+  ];
 
   async run() {
-    const {args} = this.parse(MhQaCli)
-    const branch = args.branch || await ask_for_branch()
+    const {
+      args,
+    }: { args: { mode: Mode; branch: string; apiEnv: ApiEnv } } = this.parse(
+      MhQaCli,
+    );
+    console.log('🌤️  MissionHub QA CLI  ⛰'.cyan);
 
-    if(branch == 'quit' || branch == 'exit' || branch == '') return console.log('fine.......');
+    const {
+      mode,
+    }: {
+      mode: Mode;
+    } = args.mode
+      ? { mode: args.mode }
+      : await inquirer.prompt([
+          {
+            type: 'list',
+            name: 'mode',
+            message: 'What would you like to do?'.yellow,
+            choices: [
+              { name: '🍏  Run iOS Simulator', value: 'ios' },
+              { name: '🤖  Run Android emulator', value: 'android' },
+              new inquirer.Separator(),
+              { name: '🛠️  Setup dev tools', value: 'setup' },
+              { name: '🌌  Setup OneSky keys', value: 'oneskySetup' },
+              { name: '❌  Exit', value: 'exit' },
+            ],
+          },
+        ]);
 
-    if(branch == 'setup') return await setup();
-
-    await checkout_brach(branch)
-    await yarn_install()
-    await pods()
-    launch()
+    switch (mode) {
+      case 'ios':
+        // TODO: add API env selection
+        await prepareForBuild(args.branch, args.apiEnv);
+        await pods();
+        await launchIos();
+        return;
+      case 'android':
+        await prepareForBuild(args.branch, args.apiEnv);
+        await launchAndroid();
+        return;
+      case 'setup':
+        return await setup();
+      case 'oneskySetup':
+        return await oneskySetup();
+      case 'exit':
+        return;
+    }
   }
 }
 
-async function ask_for_branch() {
-  console.log('Which branch would you like to QA?')
-  console.log('You can say:')
-  console.log('setup - This will make sure you have all that you need to run MissionHub React Native')
-  console.log('master - This is the version of the app that should be on the app store')
-  console.log('exit - To get out of here')
-  console.log('or any branch given to you by a programmer')
-  return await cli.prompt('Which branch?')
+const prepareForBuild = async (argBranch: string, apiEnv: ApiEnv) => {
+  const branch = argBranch || (await askForBranch());
+  await setApiEnv(apiEnv);
+  await checkoutBranch(branch);
+  await yarn();
+  await oneskyDownload();
+};
+
+async function askForBranch() {
+  const { branch }: { branch: string } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'branch',
+      message: 'Which branch would you like to QA?'.yellow,
+      choices: await fetchBranches(),
+    },
+  ]);
+  return branch;
 }
 
-async function setup() {
-  if(await ensure_brew()) {
-    console.log("Homebrew ✅")
-  } else {
-    return console.log("Homebrew not installed, that's the one thing I can't help with...")
+async function fetchBranches() {
+  cli.action.start('👀  Fetching branches');
+
+  const { stdout } = await exec(
+    "cd ~/code/missionhub-react-native && git ls-remote -q --heads | awk '{print $2}'",
+  );
+
+  const sortPriority = (branch: string) =>
+    branch === 'develop'
+      ? 3
+      : branch === 'master'
+      ? 2
+      : branch.match(/^MHP-/i)
+      ? 1
+      : 0;
+
+  const branches /*Object.values(*/ = stdout
+    .split('\n')
+    .filter(Boolean)
+    .map(branch => branch.trim().replace('refs/heads/', ''))
+    .sort((a, b) => {
+      const sortDiff = sortPriority(b) - sortPriority(a);
+      return sortDiff === 0
+        ? a.localeCompare(b, undefined, { sensitivity: 'base' })
+        : sortDiff;
+    });
+
+  cli.action.stop();
+
+  return branches;
+}
+
+const setApiEnv = async (apiEnvArg: ApiEnv) => {
+  const { apiEnv }: { apiEnv: ApiEnv } = apiEnvArg
+    ? { apiEnv: apiEnvArg }
+    : await inquirer.prompt([
+        {
+          type: 'list',
+          name: 'apiEnv',
+          message: 'Which API environment would you like to test against?'
+            .yellow,
+          choices: ['staging', 'production'],
+        },
+      ]);
+
+  const apiUri =
+    apiEnv === 'production'
+      ? 'https://api.missionhub.com'
+      : 'https://api-stage.missionhub.com';
+
+  const envFilePath = `${process.env.HOME}/code/missionhub-react-native/.env`;
+
+  const envContents = await readFile(envFilePath, 'utf8');
+  await writeFile(
+    envFilePath,
+    envContents.replace(/API_BASE_URL=.*\n/, `API_BASE_URL=${apiUri}\n`),
+  );
+};
+
+async function checkoutBranch(branch: string) {
+  cli.action.start('🚛  Checking out branch: ' + branch);
+  await exec(
+    'cd ~/code/missionhub-react-native && git checkout -f origin/' + branch,
+  );
+  cli.action.stop();
+}
+
+async function yarn() {
+  cli.action.start('🧶  Installing JS dependencies');
+  await exec('cd ~/code/missionhub-react-native && yarn');
+  cli.action.stop();
+}
+
+async function oneskyDownload() {
+  cli.action.start('💬  Downloading translations from OneSky');
+  try {
+    await exec('cd ~/code/missionhub-react-native && yarn onesky:download');
+  } catch {
+    console.log(
+      "⚠️  Warning: Translations not downloaded. Make sure you've configured OneSky API Keys. Continuing..."
+        .yellow,
+    );
   }
-
-  if(!await install_git()) return 'error installing git';
-  if(!await install_cocopods()) return 'error installing cocopods';
-  if(!await install_rn_cli()) return 'error installing react-native-cli';
-  if(!await install_yarn()) return 'error installing yarn';
-  if(!await setup_env()) return 'error setting up env';
-}
-
-async function ls() {
-  const { stdout, stderr } = await exec('ls');
-  console.log('stdout:', stdout);
-  console.log('stderr:', stderr);
-}
-
-async function checkout_brach(branch:string) {
-  cli.action.start('checking out branch: ' + branch)
-  await exec('cd ~/code/missionhub-react-native && git fetch origin ' + branch)
-  await exec('cd ~/code/missionhub-react-native && git checkout -f origin/' + branch)
-  cli.action.stop()
-}
-
-async function yarn_install() {
-  cli.action.start('installing js dependancies')
-  await exec('cd ~/code/missionhub-react-native && yarn')
-  cli.action.stop()
+  cli.action.stop();
 }
 
 async function pods() {
-  cli.action.start('installing iOS pods')
-  await exec('cd ~/code/missionhub-react-native && yarn ios:pod')
-  cli.action.stop()
+  cli.action.start('📦  Installing iOS pods');
+  await exec('cd ~/code/missionhub-react-native && yarn ios:pod');
+  cli.action.stop();
 }
 
-async function launch() {
-  cli.action.start('building and launching on simulator')
-  await exec('cd ~/code/missionhub-react-native && yarn ios --configuration Release')
-  cli.action.stop()
-}
-
-async function ensure_brew() {
+async function launchIos() {
+  cli.action.start('📲  Building and launching on iOS simulator');
   try {
-    await exec('command -v brew')
-    return true
-  } catch {
-    return false
+    await exec(
+      'cd ~/code/missionhub-react-native && yarn ios --configuration Release',
+    );
+  } catch (e) {
+    console.error(e.stdout.red);
   }
+  cli.action.stop();
 }
 
-async function install_git() {
+async function launchAndroid() {
+  cli.action.start('📲  Building and launching on Android emulator');
+  exec('~/Library/Android/sdk/emulator/emulator -avd missionhub-qa-cli &');
   try {
-    await exec('command -v git')
-    console.log("git ✅")
-    return true
-  } catch {}
-
-  try {
-    cli.action.start('git not found, trying to install')
-    await exec('brew install git')
-    cli.action.stop("git ✅")
-    return true
-  } catch {
-    console.log("error installing git! 😢")
-    return false
+    await exec(
+      'cd ~/code/missionhub-react-native && ANDROID_SDK_ROOT=/Users/scottywaggoner/Library/Android/sdk yarn android',
+    );
+  } catch (e) {
+    console.error(e.stdout.red);
   }
+  cli.action.stop();
 }
 
-async function install_cocopods() {
-  try {
-    await exec('command -v pod')
-    console.log("cocopods ✅")
-    return true
-  } catch {}
-
-  try {
-    cli.action.start('cocopods not found, trying to install')
-    await exec('gem install cocopods')
-    cli.action.stop("cocopods ✅")
-    return true
-  } catch {
-    console.log("error installing cocopods! 😢")
-    return false
-  }
-}
-
-async function install_rn_cli() {
-  try {
-    await exec('command -v react-native')
-    console.log("react-native ✅")
-    return true
-  } catch {}
-
-  try {
-    cli.action.start('react-native not found, trying to install')
-    await exec('npm install -g react-native-cli')
-    cli.action.stop("react-native ✅")
-    return true
-  } catch {
-    console.log("error installing react-native! 😢")
-    return false
-  }
-}
-
-async function install_yarn() {
-  try {
-    await exec('command -v yarn')
-    console.log("yarn ✅")
-    return true
-  } catch {}
-
-  try {
-    cli.action.start('yarn not found, trying to install')
-    await exec('brew install yarn')
-    cli.action.stop("yarn ✅")
-    return true
-  } catch {
-    console.log("error installing yarn! 😢")
-    return false
-  }
-}
-
-async function setup_env() {
-  try {
-    await exec('ls ~/code/missionhub-react-native/.env')
-    return true
-  } catch {}
-
-  try {
-    console.log("adding .env")
-    await exec("echo 'API_BASE_URL=https://api-stage.missionhub.com' > ~/code/missionhub-react-native/.env")
-    return true
-  } catch {
-    console.log("error adding env var! 😢")
-    return false
-  }
-}
-
-export = MhQaCli
+export = MhQaCli;
