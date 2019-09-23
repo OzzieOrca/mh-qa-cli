@@ -125,7 +125,7 @@ async function fetchBranches() {
       ? 1
       : 0;
 
-  const branches /*Object.values(*/ = stdout
+  const branches = stdout
     .split('\n')
     .filter(Boolean)
     .map(branch => branch.trim().replace('refs/heads/', ''))
