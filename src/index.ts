@@ -169,8 +169,9 @@ const setApiEnv = async (apiEnvArg: ApiEnv) => {
 
 async function checkoutBranch(branch: string) {
   cli.action.start('🚛  Checking out branch: ' + branch);
+  await exec(`cd ~/code/missionhub-react-native && git fetch origin ${branch}`);
   await exec(
-    'cd ~/code/missionhub-react-native && git checkout -f origin/' + branch,
+    `cd ~/code/missionhub-react-native && git checkout -f origin/${branch}`,
   );
   cli.action.stop();
 }

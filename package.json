@@ -47,6 +47,7 @@
   },
   "repository": "soberstadt/mh-qa-cli",
   "scripts": {
+    "start": "./bin/run",
     "posttest": "tslint -p . -t stylish",
     "prepack": "rm -rf lib && tsc -b",
     "test": "echo NO TESTS"
