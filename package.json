@@ -1,7 +1,7 @@
 {
   "name": "mh-qa-cli",
   "description": "A command to get MissionHub QA running",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "author": "Spencer Oberstadt @soberstadt",
   "bin": {
     "mh-qa": "./bin/run"
