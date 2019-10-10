@@ -218,7 +218,7 @@ async function launchAndroid() {
   exec('~/Library/Android/sdk/emulator/emulator -avd missionhub-qa-cli &');
   try {
     await exec(
-      'cd ~/code/missionhub-react-native && ANDROID_SDK_ROOT=/Users/scottywaggoner/Library/Android/sdk yarn android',
+      `cd ~/code/missionhub-react-native && ANDROID_SDK_ROOT=${process.env.HOME}/Library/Android/sdk yarn android`,
     );
   } catch (e) {
     console.error(e.stdout.red);
