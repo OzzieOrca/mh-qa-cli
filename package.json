@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "author": "Spencer Oberstadt @soberstadt",
   "bin": {
-    "mh-qa": "./bin/run"
+    "mh-qa-cli": "./bin/run"
   },
   "bugs": "https://github.com/soberstadt/mh-qa-cli/issues",
   "dependencies": {
